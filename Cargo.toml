@@ -1,0 +1,12 @@
+[package]
+name = "htb-tui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.29.0"
+crossterm = "0.28.0"
+reqwest = { version = "0.12.12", features = ["json"] }
+serde_json = "1.0.136"
+serde = { version = "1.0.127", features = ["derive"] }
+tokio = { version = "1.42.0", features = ["full"] }
