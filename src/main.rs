@@ -18,7 +18,17 @@ const HTB_API_URL: &str = "https://labs.hackthebox.com/api/v4";
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Root {
-    data: Vec<Machine>
+    data: Vec<Machine>,
+    links: Link
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Link {
+    first: String,
+    last: String,
+    prev: Option<String>,
+    next: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -135,6 +145,10 @@ impl Widget for &App {
 //    Ok(res)
 //}
 
+fn print_type_of<T>(_: &T) {
+    println!("{}", std::any::type_name::<T>());
+}
+
 #[tokio::main]
 async fn main() ->Result<(), Box<dyn std::error::Error>> {
     let HTB_API_KEY = env::var("HTB_API_KEY")?;
@@ -148,17 +162,30 @@ async fn main() ->Result<(), Box<dyn std::error::Error>> {
         .await?
         .json::<Root>()
         .await?;
-    println!("{:?}", res);
-    let client = reqwest::Client::new();
+    let active_machines: Vec<Machine> = res.data;
+    println!("{:?}", active_machines);
     let url = format!("{}/machine/list/retired/paginated?per_page=100", HTB_API_URL);
-    let res = client
+    let mut res = client
         .get(url)
         .header("Authorization", format!("Bearer {}", HTB_API_KEY))
         .send()
         .await?
-        .text()
+        .json::<Root>()
         .await?;
-    println!("{}", res);
+    let mut retired_machines: Vec<Machine> = res.data;
+    while res.links.next.is_some()
+    {
+        let url = res.links.next.unwrap();
+        res = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", HTB_API_KEY))
+            .send()
+            .await?
+            .json::<Root>()
+            .await?;
+        retired_machines.append(&mut res.data);
+    }
+    println!("{:?}", retired_machines);
     //let mut terminal = ratatui::init();
     //let app_result = App::default().run(&mut terminal);
     //ratatui::restore();
