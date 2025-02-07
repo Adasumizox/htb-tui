@@ -64,12 +64,30 @@ impl Machine {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FilterCriteria {
+    None,
+    UserNotOwns,
+    RootNotOwns,
+    UserAndRootNotOwns,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SortCriteria {
+    Difficulty,
+    UserOwns,
+    RootOwns,
+    Name,
+}
+
 struct App {
     machines: Vec<Machine>,
     state: ListState,
     htb_api_key: String, // Hackthebox application key
     client: Client, // Reqwest client instance
     info_message: String, // Message for user
+    filter_criteria: FilterCriteria, // Criteria for filtering
+    sort_criteria: SortCriteria, // Criteria for sorting
 }
 
 impl App {
@@ -83,13 +101,16 @@ impl App {
             htb_api_key,
             client,
             info_message: String::new(),
+            filter_criteria: FilterCriteria::None, // Show all machines by default
+            sort_criteria: SortCriteria::Difficulty, // Sort by difficulty by default
         })
     }
 
     fn next(&mut self) {
+        let filtered = self.filtered_machines(); // Get filtered list
         let i = match self.state.selected() {
             Some(i) => {
-                if i >= self.machines.len() - 1 {
+                if i >= filtered.len().saturating_sub(1) { // Saturating sub prevents underflowing
                     0
                 } else {
                     i + 1
@@ -101,10 +122,11 @@ impl App {
     }
 
     fn previous(&mut self) {
+        let filtered = self.filtered_machines(); // Get filtered list
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.machines.len() - 1
+                    filtered.len().saturating_sub(1) // Saturating sub prevents underflowing
                 } else {
                     i - 1
                 }
@@ -115,31 +137,84 @@ impl App {
     }
 
     async fn spawn_machine(&mut self) -> Result<(), Box<dyn Error>> {
+        let filtered = self.filtered_machines();
         if let Some(selected) = self.state.selected() {
-            let machine = &self.machines[selected];
-            if machine.is_active() {
-                self.info_message = format!("Machine {} is already active.", machine.name);
-                return Ok(());
-            }
+            if selected < filtered.len() { // Check index
+                let machine = &filtered[selected]; // Use filtered list
+                if machine.is_active() {
+                    self.info_message = format!("Machine {} is already active.", machine.name);
+                    return Ok(());
+                }
+            
+                let url = format!("{}/vm/spawn/?machine_id={}", HTB_API_URL, machine.id.to_string());
+                let res = self.client
+                    .post(url)
+                    .header("Authorization", format!("Bearer {}", self.htb_api_key))
+                    .send()
+                    .await?;
 
-            let url = format!("{}/vm/spawn/?machine_id={}", HTB_API_URL, machine.id.to_string());
-            let res = self.client
-                .post(url)
-                .header("Authorization", format!("Bearer {}", self.htb_api_key))
-                .send()
-                .await?;
-
-            if res.status().is_success() {
-                self.info_message = format!("Spawned machine: {}", machine.name);
-                // Refresh the machine list after spawning
-                // Maybe replace that with update to only one machine (?)
-                self.machines = fetch_all_machines(&self.client, &self.htb_api_key).await?;
-                self.state.select(Some(selected)); 
-            } else {
-                self.info_message = format!("Failed to spawn {}: {}", machine.name, res.status())
+                if res.status().is_success() {
+                    self.info_message = format!("Spawned machine: {}", machine.name);
+                    // Refresh the machine list after spawning
+                    // Maybe replace that with update to only one machine (?)
+                    self.machines = fetch_all_machines(&self.client, &self.htb_api_key).await?;
+                    // After refresh re-apply filter
+                    let filtered = self.filtered_machines();
+                    if selected < filtered.len() {
+                        self.state.select(Some(selected)); 
+                    }
+                } else {
+                    self.info_message = format!("Failed to spawn {}: {}", machine.name, res.status())
+                }
             }
         }
         Ok(())
+    }
+
+    fn filtered_machines(&self) -> Vec<Machine> {
+        let mut filtered = self.machines.clone();
+        filtered.retain(|machine| { // Remove all elements that do not met criteria
+            match self.filter_criteria {
+                FilterCriteria::None => true,
+                FilterCriteria::UserNotOwns => !machine.auth_user_in_user_owns,
+                FilterCriteria::RootNotOwns => !machine.auth_user_in_root_owns,
+                FilterCriteria::UserAndRootNotOwns => !machine.auth_user_in_user_owns && !machine.auth_user_in_root_owns,
+            }
+        });
+        filtered
+    }
+
+    fn sorted_machines(&self, machines: Vec<Machine>) -> Vec<Machine> {
+        let mut sorted = machines;
+        sorted.sort_by(|a, b| {
+            match self.sort_criteria {
+                SortCriteria::Difficulty => a.difficulty.cmp(&b.difficulty), // Ascending
+                SortCriteria::UserOwns => b.user_owns_count.cmp(&a.user_owns_count), // Descending
+                SortCriteria::RootOwns => b.root_owns_count.cmp(&a.root_owns_count),
+                SortCriteria::Name => a.name.cmp(&b.name)
+            }
+        });
+        sorted
+    }
+
+    fn cycle_filter(&mut self) {
+        self.filter_criteria = match self.filter_criteria {
+            FilterCriteria::None => FilterCriteria::UserNotOwns,
+            FilterCriteria::UserNotOwns => FilterCriteria::RootNotOwns,
+            FilterCriteria::RootNotOwns => FilterCriteria::UserAndRootNotOwns,
+            FilterCriteria::UserAndRootNotOwns => FilterCriteria::None,
+        };
+        self.state.select(None);
+    }
+
+    fn cycle_sort(&mut self) {
+        self.sort_criteria = match self.sort_criteria {
+            SortCriteria::Difficulty => SortCriteria::UserOwns,
+            SortCriteria::UserOwns => SortCriteria::RootOwns,
+            SortCriteria::RootOwns => SortCriteria::Name,
+            SortCriteria::Name => SortCriteria::Difficulty,
+        };
+        self.state.select(None);
     }
 }
 
@@ -208,7 +283,7 @@ async fn main() ->Result<(), Box<dyn std::error::Error>> {
 
 async fn run_app<B: Backend>(
     terminal: &mut Terminal<B>, 
-    mut app: Result<App, Box<dyn std::error::Error>>
+    app: Result<App, Box<dyn std::error::Error>>
 ) ->io::Result<()> {
     let mut app_unwraped = app.unwrap();
     loop {
@@ -218,6 +293,8 @@ async fn run_app<B: Backend>(
             if key.kind == KeyEventKind::Press {
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char('f') => app_unwraped.cycle_filter(),
+                    KeyCode::Char('s') => app_unwraped.cycle_sort(),
                     KeyCode::Down => app_unwraped.next(),
                     KeyCode::Up => app_unwraped.previous(),
                     KeyCode::Enter => {
@@ -237,8 +314,10 @@ fn ui(f: &mut Frame, app: &mut App) {
     let chunks =
         Layout::vertical([Constraint::Percentage(90), Constraint::Percentage(10)]).split(f.area());
 
-    let items: Vec<ListItem> = app
-        .machines
+    let filtered_machines = app.filtered_machines();
+    let sorted_machines = app.sorted_machines(filtered_machines);
+
+    let items: Vec<ListItem> = sorted_machines
         .iter()
         .map(|machine| {
             let status = if machine.is_active() {
@@ -246,8 +325,24 @@ fn ui(f: &mut Frame, app: &mut App) {
             } else {
                 Span::styled("Inactive", Style::default().fg(Color::Red))
             };
+            let user_owns_symbol = if machine.auth_user_in_user_owns {
+                "✓"
+            } else {
+                " "
+            };
+            let root_owns_symbol = if machine.auth_user_in_root_owns {
+                "✓"
+            } else {
+                " "
+            };
+
             let line = Line::from(vec![
-                Span::raw(format!("{:15} ({:10}) [{:10}]", machine.name, machine.os, machine.difficulty)),
+                Span::raw(
+                    format!(
+                        "{:15} ({:10}) [{:3}] U:{}, R:{}", 
+                        machine.name, machine.os, machine.difficulty, user_owns_symbol, root_owns_symbol
+                    )
+                ),
                 status,
             ]);
 
@@ -255,8 +350,12 @@ fn ui(f: &mut Frame, app: &mut App) {
         })
         .collect();
 
+    let list_title = format!(
+        "Machines (Filter: {:?}, Sort: {:?})",
+        app.filter_criteria, app.sort_criteria
+    );
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Machines"))
+        .block(Block::default().borders(Borders::ALL).title(list_title))
         .highlight_style(
             Style::default()
                 .fg(Color::Yellow)
