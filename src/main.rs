@@ -108,9 +108,10 @@ impl App {
 
     fn next(&mut self) {
         let filtered = self.filtered_machines(); // Get filtered list
+        let sorted = self.sorted_machines(filtered); // Get sorted list
         let i = match self.state.selected() {
             Some(i) => {
-                if i >= filtered.len().saturating_sub(1) { // Saturating sub prevents underflowing
+                if i >= sorted.len().saturating_sub(1) { // Saturating sub prevents underflowing
                     0
                 } else {
                     i + 1
@@ -123,10 +124,11 @@ impl App {
 
     fn previous(&mut self) {
         let filtered = self.filtered_machines(); // Get filtered list
+        let sorted = self.sorted_machines(filtered); // Get sorted list
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
-                    filtered.len().saturating_sub(1) // Saturating sub prevents underflowing
+                    sorted.len().saturating_sub(1) // Saturating sub prevents underflowing
                 } else {
                     i - 1
                 }
@@ -138,9 +140,10 @@ impl App {
 
     async fn spawn_machine(&mut self) -> Result<(), Box<dyn Error>> {
         let filtered = self.filtered_machines();
+        let sorted = self.sorted_machines(filtered);
         if let Some(selected) = self.state.selected() {
-            if selected < filtered.len() { // Check index
-                let machine = &filtered[selected]; // Use filtered list
+            if selected < sorted.len() { // Check index
+                let machine = &sorted[selected]; // Use filtered list
                 if machine.is_active() {
                     self.info_message = format!("Machine {} is already active.", machine.name);
                     return Ok(());
@@ -160,8 +163,15 @@ impl App {
                     self.machines = fetch_all_machines(&self.client, &self.htb_api_key).await?;
                     // After refresh re-apply filter
                     let filtered = self.filtered_machines();
-                    if selected < filtered.len() {
-                        self.state.select(Some(selected)); 
+                    let sorted = self.sorted_machines(filtered);
+                    if selected < sorted.len() {
+                        self.state.select(Some(selected));
+                    } else if !sorted.is_empty() {
+                        // Index out of bounds, select last item
+                        self.state.select(Some(sorted.len() - 1));
+                    } else {
+                        // List empty
+                        self.state.select(None);
                     }
                 } else {
                     self.info_message = format!("Failed to spawn {}: {}", machine.name, res.status())
