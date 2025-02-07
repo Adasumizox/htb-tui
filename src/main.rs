@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use reqwest::Client;
 use ratatui::{
-    prelude::*,
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Layout},
     style::{Color, Modifier, Style},
@@ -116,7 +115,31 @@ impl App {
     }
 
     async fn spawn_machine(&mut self) -> Result<(), Box<dyn Error>> {
-        todo!();
+        if let Some(selected) = self.state.selected() {
+            let machine = &self.machines[selected];
+            if machine.is_active() {
+                self.info_message = format!("Machine {} is already active.", machine.name);
+                return Ok(());
+            }
+
+            let url = format!("{}/vm/spawn/?machine_id={}", HTB_API_URL, machine.id.to_string());
+            let res = self.client
+                .post(url)
+                .header("Authorization", format!("Bearer {}", self.htb_api_key))
+                .send()
+                .await?;
+
+            if res.status().is_success() {
+                self.info_message = format!("Spawned machine: {}", machine.name);
+                // Refresh the machine list after spawning
+                // Maybe replace that with update to only one machine (?)
+                self.machines = fetch_all_machines(&self.client, &self.htb_api_key).await?;
+                self.state.select(Some(selected)); 
+            } else {
+                self.info_message = format!("Failed to spawn {}: {}", machine.name, res.status())
+            }
+        }
+        Ok(())
     }
 }
 
@@ -224,7 +247,7 @@ fn ui(f: &mut Frame, app: &mut App) {
                 Span::styled("Inactive", Style::default().fg(Color::Red))
             };
             let line = Line::from(vec![
-                Span::raw(format!("{:15} ({:10}) ", machine.name, machine.os)),
+                Span::raw(format!("{:15} ({:10}) [{:10}]", machine.name, machine.os, machine.difficulty)),
                 status,
             ]);
 
