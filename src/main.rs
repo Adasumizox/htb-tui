@@ -4,10 +4,10 @@ use serde_json::Value;
 use reqwest::Client;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Layout},
+    layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Line},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Clear},
     Frame, Terminal,
 };
 use crossterm::{
@@ -52,6 +52,7 @@ struct Machine {
     root_owns_count: u64,
     auth_user_in_root_owns: bool,
     active: Value,
+    ip: Option<String>
 }
 
 impl Machine {
@@ -80,14 +81,28 @@ enum SortCriteria {
     Name,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputMode {
+    Normal,
+    UserFlag,
+    RootFlag,
+}
+
 struct App {
+    htb_api_key: String, // Hackthebox application key
+    client: Client, // Reqwest client
+
     machines: Vec<Machine>,
     state: ListState,
-    htb_api_key: String, // Hackthebox application key
-    client: Client, // Reqwest client instance
     info_message: String, // Message for user
     filter_criteria: FilterCriteria, // Criteria for filtering
     sort_criteria: SortCriteria, // Criteria for sorting
+    
+    input_mode: InputMode, // input mode
+    user_flag_input: String, // flag for user
+    root_flag_input: String, // flag for root
+    show_input_fields: bool, // control input visibility
+    selected_machine_ip: Option<String>, // IP of active machine
 }
 
 impl App {
@@ -96,13 +111,18 @@ impl App {
         let client = reqwest::Client::new();
         let machines = fetch_all_machines(&client, &htb_api_key).await?;
         Ok(App {
-            machines,
-            state: ListState::default(),
             htb_api_key,
             client,
+            machines,
+            state: ListState::default(),
             info_message: String::new(),
             filter_criteria: FilterCriteria::None, // Show all machines by default
             sort_criteria: SortCriteria::Difficulty, // Sort by difficulty by default
+            input_mode: InputMode::Normal,
+            user_flag_input: String::new(),
+            root_flag_input: String::new(),
+            show_input_fields: false,
+            selected_machine_ip: None,
         })
     }
 
@@ -120,6 +140,7 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
+        self.update_input_fields();
     }
 
     fn previous(&mut self) {
@@ -136,6 +157,7 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
+        self.update_input_fields();
     }
 
     async fn spawn_machine(&mut self) -> Result<(), Box<dyn Error>> {
@@ -177,6 +199,7 @@ impl App {
                     self.info_message = format!("Failed to spawn {}: {}", machine.name, res.status())
                 }
             }
+            self.update_input_fields();
         }
         Ok(())
     }
@@ -215,6 +238,7 @@ impl App {
             FilterCriteria::UserAndRootNotOwns => FilterCriteria::None,
         };
         self.state.select(None);
+        self.update_input_fields();
     }
 
     fn cycle_sort(&mut self) {
@@ -225,6 +249,82 @@ impl App {
             SortCriteria::Name => SortCriteria::Difficulty,
         };
         self.state.select(None);
+        self.update_input_fields();
+    }
+
+    fn update_input_fields(&mut self) {
+        if let Some(selected) = self.state.selected() {
+            let filtered = self.filtered_machines();
+            let sorted = self.sorted_machines(filtered);
+            if selected < sorted.len() {
+                let machine = &sorted[selected];
+                self.show_input_fields = machine.is_active()
+                    && (!machine.auth_user_in_user_owns || !machine.auth_user_in_root_owns);
+                self.selected_machine_ip = machine.ip.clone();
+            } else {
+                self.show_input_fields = false;
+                self.selected_machine_ip = None;
+            }
+        } else {
+            self.show_input_fields = false;
+            self.selected_machine_ip = None;
+        }
+    }
+
+    fn enter_user_flag_input_mode(&mut self) {
+        if self.show_input_fields {
+            self.input_mode = InputMode::UserFlag;
+        }
+    }
+
+    fn enter_root_flag_input_mode(&mut self) {
+        if self.show_input_fields {
+            self.input_mode = InputMode::RootFlag;
+        }
+    }
+
+    fn process_input(&mut self, key_code: KeyCode) {
+        match self.input_mode {
+            InputMode::UserFlag => {
+                match key_code {
+                    KeyCode::Char(c) => {
+                        self.user_flag_input.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        self.user_flag_input.pop();
+                    }
+                    KeyCode::Enter => {
+                        self.info_message = format!("User flag submited: {}", self.user_flag_input);
+                        todo!();
+                        self.input_mode = InputMode::Normal;
+                    }
+                    KeyCode::Esc => {
+                        self.input_mode = InputMode::Normal;
+                    }
+                    _ => {}
+                }
+            }
+            InputMode::RootFlag => {
+                match key_code {
+                    KeyCode::Char(c) => {
+                        self.root_flag_input.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        self.root_flag_input.pop();
+                    }
+                    KeyCode::Enter => {
+                        self.info_message = format!("User flag submited: {}", self.root_flag_input);
+                        todo!();
+                        self.input_mode = InputMode::Normal;
+                    }
+                    KeyCode::Esc => {
+                        self.input_mode = InputMode::Normal;
+                    }
+                    _ => {}
+                }
+            }
+            InputMode::Normal => {}
+        }
     }
 }
 
@@ -257,7 +357,34 @@ async fn fetch_machines(client: &Client, htb_api_key: &str, url: &str) -> Result
         .await?
         .json::<Root>()
         .await?;
-    Ok(res)
+    
+    // Populate with IP because by default paginated does not have information about IP
+    // Maybe i should do it in spawn function but then if machine is active before
+    // We would not see it in active pane
+    let mut res_with_ip = res;
+    for machine in &mut res_with_ip.data {
+        if machine.is_active() {
+            match client.get(format!("{}/machine/profile/{}", HTB_API_URL, machine.id))
+                .header("Authorization", format!("Bearer {}", htb_api_key))
+                .send()
+                .await
+                {
+                    Ok(response) => {
+                        if let Ok(json) = response.json::<Value>().await {
+                            if let Some(ip) = json.get("ip").and_then(Value::as_str) {
+                                machine.ip = Some(ip.to_string());
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        // Maybe write that in info pane also
+                        eprintln!("Error fetching machine info for {}: {}", machine.id, e);
+                    }
+                }
+        }
+    }
+
+    Ok(res_with_ip)
 }
 
 #[tokio::main]
@@ -307,6 +434,8 @@ async fn run_app<B: Backend>(
                     KeyCode::Char('s') => app_unwraped.cycle_sort(),
                     KeyCode::Down => app_unwraped.next(),
                     KeyCode::Up => app_unwraped.previous(),
+                    KeyCode::Char('u') => app_unwraped.enter_user_flag_input_mode(),
+                    KeyCode::Char('r') => app_unwraped.enter_root_flag_input_mode(),
                     KeyCode::Enter => {
                         let spawn_result = app_unwraped.spawn_machine().await;
                         if let Err(e) = spawn_result {
@@ -380,4 +509,69 @@ fn ui(f: &mut Frame, app: &mut App) {
         .block(Block::default().borders(Borders::ALL).title("Info"));
 
     f.render_widget(info_paragraph, chunks[1]);
+
+    // Active machine pane
+    if app.show_input_fields {
+        if let Some(selected) = app.state.selected() {
+            if selected < sorted_machines.len() {
+                let machine = &sorted_machines[selected];
+                // Layout, area to minimize flickering
+                let area = f.area();
+                let details_chunk = Layout::horizontal([Constraint::Length(40), Constraint::Min(0)]).split(
+                    Rect::new(area.width / 2 - 20, area.height / 2 - 5, 55, 10)
+                );
+
+                let active_info = Paragraph::new(vec![
+                    Line::from(vec![Span::styled("Active machine: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(&machine.name)]),
+                    Line::from(vec![Span::styled("IP Address: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(app.selected_machine_ip.as_deref().unwrap_or("N/A"))]),
+                ])
+                .style(Style::default().fg(Color::White))
+                .block(Block::default().borders(Borders::ALL).title("Active Machine Info"));
+
+                f.render_widget(Clear, details_chunk[0]); // Clear area
+                f.render_widget(active_info, details_chunk[0]);
+
+                // Input fields
+                let input_chunks = Layout::vertical([Constraint::Length(3), Constraint::Length(3)]).split(details_chunk[1]);
+
+                // User flag
+                let user_flag_block = Paragraph::new(app.user_flag_input.clone())
+                    .style(match app.input_mode {
+                        InputMode::UserFlag => Style::default().fg(Color::Yellow),
+                        _ => Style::default().fg(Color::White),
+                    })
+                    .block(Block::default().borders(Borders::ALL).title("User Flag"));
+
+                // Root flag
+                let root_flag_block = Paragraph::new(app.root_flag_input.clone())
+                    .style(match app.input_mode {
+                        InputMode::RootFlag => Style::default().fg(Color::Yellow),
+                        _ => Style::default().fg(Color::White),
+                    })
+                    .block(Block::default().borders(Borders::ALL).title("Root Flag"));
+
+                f.render_widget(Clear, input_chunks[0]);
+                f.render_widget(user_flag_block, input_chunks[0]);
+                f.render_widget(Clear, input_chunks[1]);
+                f.render_widget(root_flag_block, input_chunks[1]);
+
+                // Set cursor position
+                match app.input_mode {
+                    InputMode::UserFlag => {
+                        f.set_cursor(
+                            input_chunks[0].x + app.user_flag_input.len() as u16 + 1,
+                            input_chunks[0].y + 1,
+                        )
+                    }
+                    InputMode::RootFlag => {
+                        f.set_cursor(
+                            input_chunks[1].x + app.root_flag_input.len() as u16 + 1,
+                            input_chunks[1].y + 1,
+                        )
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 }
