@@ -371,13 +371,12 @@ async fn fetch_machines(client: &Client, htb_api_key: &str, url: &str) -> Result
                 {
                     Ok(response) => {
                         if let Ok(json) = response.json::<Value>().await {
-                            if let Some(ip) = json.get("ip").and_then(Value::as_str) {
+                            if let Some(ip) = json.get("info").and_then(|info| info.get("ip")).and_then(Value::as_str) {
                                 machine.ip = Some(ip.to_string());
                             }
                         }
                     },
                     Err(e) => {
-                        // Maybe write that in info pane also
                         eprintln!("Error fetching machine info for {}: {}", machine.id, e);
                     }
                 }
