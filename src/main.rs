@@ -427,21 +427,28 @@ async fn run_app<B: Backend>(
 
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Char('q') => return Ok(()),
-                    KeyCode::Char('f') => app_unwraped.cycle_filter(),
-                    KeyCode::Char('s') => app_unwraped.cycle_sort(),
-                    KeyCode::Down => app_unwraped.next(),
-                    KeyCode::Up => app_unwraped.previous(),
-                    KeyCode::Char('u') => app_unwraped.enter_user_flag_input_mode(),
-                    KeyCode::Char('r') => app_unwraped.enter_root_flag_input_mode(),
-                    KeyCode::Enter => {
-                        let spawn_result = app_unwraped.spawn_machine().await;
-                        if let Err(e) = spawn_result {
-                            app_unwraped.info_message = format!("Error: {}", e);
+                match app_unwraped.input_mode {
+                    InputMode::Normal => {
+                        match key.code {
+                            KeyCode::Char('q') => return Ok(()),
+                            KeyCode::Char('f') => app_unwraped.cycle_filter(),
+                            KeyCode::Char('s') => app_unwraped.cycle_sort(),
+                            KeyCode::Down => app_unwraped.next(),
+                            KeyCode::Up => app_unwraped.previous(),
+                            KeyCode::Char('u') => app_unwraped.enter_user_flag_input_mode(),
+                            KeyCode::Char('r') => app_unwraped.enter_root_flag_input_mode(),
+                            KeyCode::Enter => {
+                                let spawn_result = app_unwraped.spawn_machine().await;
+                                if let Err(e) = spawn_result {
+                                    app_unwraped.info_message = format!("Error: {}", e);
+                                }
+                            }
+                            _ => {}
                         }
+                    },
+                    InputMode::UserFlag | InputMode::RootFlag => {
+                        app_unwraped.process_input(key.code);
                     }
-                    _ => {}
                 }
             }
         }
@@ -516,8 +523,8 @@ fn ui(f: &mut Frame, app: &mut App) {
                 let machine = &sorted_machines[selected];
                 // Layout, area to minimize flickering
                 let area = f.area();
-                let details_chunk = Layout::horizontal([Constraint::Length(40), Constraint::Min(0)]).split(
-                    Rect::new(area.width / 2 - 20, area.height / 2 - 5, 55, 10)
+                let details_chunk = Layout::horizontal([Constraint::Length(42), Constraint::Min(0)]).split(
+                    Rect::new(area.width / 2 - 21, area.height / 2 - 5, 80, 10)
                 );
 
                 let active_info = Paragraph::new(vec![
