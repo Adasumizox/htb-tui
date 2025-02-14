@@ -19,7 +19,12 @@ To get your application token you need to visit your profile, click on "Profile 
 *   **Spawning:** Spawn machines directly from the TUI (if you have the necessary HTB subscription).
 *   **Interactive:** Navigate the list using arrow keys, and use keyboard shortcuts for filtering, sorting and spawning.
 *   **Real-time Status:** Shows whether a machine is active or inactive.
-* **User/Root Owns Indicators:** Displays ✓ or empty space whether the user owns user/root flag.
+*   **User/Root Owns Indicators:** Displays ✓ or empty space whether the user owns user/root flag.
+*   **Active Machine Details and Flag Submission Pane:** When a machine is active and not owned, a pane appears displaying:
+    *   Active machine's name
+    *   Active machine's IP address
+    *   Input Fields for submitting the user flag
+    *   Input Fields for submitting the root flag
 
 ## Prerequisites
 
@@ -40,8 +45,8 @@ To get your application token you need to visit your profile, click on "Profile 
 1.  **Clone the repository:**
 
     ```bash
-    git clone <repository_url>  # Replace <repository_url>
-    cd <repository_directory>   # Replace <repository_directory>
+    git clone https://github.com/Adasumizox/htb-tui.git
+    cd htb-tui
     ```
 
 2.  **Set the HTB API Key:**
@@ -79,6 +84,13 @@ To get your application token you need to visit your profile, click on "Profile 
     *   **`f` key:** Cycle through the filter options (None, User Owns, Root Owns, User & Root Owns, User Not Owns, Root Not Owns, User & Root Not Owns).
 *   **Sorting:**
     *   **`s` key:** Cycle through the sort options (Difficulty, User Owns, Root Owns, Name).
+*   **Flag input mode:**
+    *   **`u` key:** Enter user flag input mode
+        *   **`Enter` key:** Submit flag
+        *   **`Esc` key:** Go back to interactive mode
+    *   **`r` key:** Enter root flag input mode
+        *   **`Enter` key:** Submit flag
+        *   **`Esc` key:** Go back to interactive mode
 *   **Spawning:**
     *   **`Enter` key:** Spawn the currently selected machine.  A message will indicate success or failure.
 *   **Quitting:**
@@ -95,7 +107,6 @@ The application displays the current filter and sort criteria in the title bar o
 ## Potential Enhancements
 
 *   **Configuration File:** Load settings (like API key, default filter, default sort) from a configuration file.
-*   **Machine Details:** Show more detailed information about a machine in a separate pane or popup (e.g., IP address after spawning, description, difficulty breakdown).
 *   **Targeted Updates:** Instead of refetching the entire machine list after spawning, update only the relevant machine's data. This would greatly improve performance.
 *   **Search Functionality:** Allow users to search for machines by name or other criteria.
 *   **Asynchronous Updates:** Use asynchronous tasks (tokio) more effectively to avoid blocking the UI while fetching data.
