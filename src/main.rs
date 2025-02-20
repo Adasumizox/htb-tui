@@ -2,7 +2,7 @@ use std::{io, env};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::{
-    app::{App, AppResult, fetch_all_machines, spawn_machine},
+    app::{App, AppResult, fetch_all_machines, spawn_machine, submit_flag},
     event::{Event, EventHandler},
     handler::handle_key_events,
     tui::Tui,
@@ -65,14 +65,26 @@ async fn main() ->AppResult<()> {
             Event::SpawnMachineResult(result) => {
                 app.handle_spawn_machine_result(result);
             }
+            Event::SubmitFlag(machine_id, flag) => {
+                    let client = app.client.clone();
+                    let htb_api_key = app.htb_api_key.clone();
+                    let sender = tui.events.sender.clone();
+                    tokio::spawn(async move {
+                        let result = submit_flag(&client, &htb_api_key, machine_id, &flag).await;
+                        if result.is_ok() {
+                            sender.send(Event::UpdateList).unwrap();
+                        }
+                        sender.send(Event::SubmitFlagResult(result)).unwrap();
+                    });
+            }
+            Event::SubmitFlagResult(result) => {
+                app.handle_submit_flag_result(result);
+            }
             Event::UpdateList => {
                 app.request_fetch_machines();
             }
             Event::UpdateInfoMessage(message) => {
                 app.set_info_message(message);
-            }
-            Event::SubmitFlag(_) => {
-                todo!()
             }
         }
     }

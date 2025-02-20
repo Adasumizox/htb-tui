@@ -16,7 +16,8 @@ pub enum Event {
     SpawnMachine(u64),
     SpawnMachineResult(Result<String, String>),
     UpdateList,
-    SubmitFlag(String),
+    SubmitFlag(u64, String),
+    SubmitFlagResult(Result<String, String>),
     UpdateInfoMessage(String),
 }
 

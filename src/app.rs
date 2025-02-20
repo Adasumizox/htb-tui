@@ -1,6 +1,6 @@
 use std::error;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use reqwest::Client;
 use ratatui::widgets::ListState;
 use tokio::sync::mpsc::UnboundedSender;
@@ -199,6 +199,25 @@ impl App {
         }
     }
 
+    pub fn request_submit_flag(&self) {
+        if let (Some(machine_id), flag) = (self.selected_machine_id, self.flag_input.clone()) {
+            self.event_sender
+                .send(Event::SubmitFlag(machine_id, flag))
+                .unwrap();
+        }
+    }
+
+    pub fn handle_submit_flag_result(&mut self, result: Result<String, String>) {
+        match result {
+            Ok(message) => {
+                self.info_message = message;
+            }
+            Err(e) => {
+                self.info_message = format!("Error sending flag: {}", e);
+            }
+        }
+    }
+
     pub fn filtered_machines(&self) -> Vec<Machine> {
         let mut filtered = self.machines.clone();
         filtered.retain(|machine| { // Remove all elements that do not met criteria
@@ -347,6 +366,34 @@ pub async fn spawn_machine(client: &Client, htb_api_key: &str, machine_id: u64) 
                 Ok(format!("Machine {} spawned successfully", machine_id))
             } else {
                 Err(format!("Failed to spawn with status: {}", response.status()))
+            }
+        }
+        Err(e) => {
+            Err(format!("Network request failed: {}", e))
+        }
+    }
+}
+
+pub async fn submit_flag(client: &Client, htb_api_key: &str, machine_id: u64, flag: &str) ->Result<String, String> {
+    let url = format!("{}/machine/own", HTB_API_URL);
+    let payload = json!({
+        "id": machine_id,
+        "flag": flag
+    });
+
+    let res = client
+        .post(url)
+        .header("Authorization", format!("Bearer {}", htb_api_key))
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await;
+    match res {
+        Ok(response) => {
+            if response.status().is_success() {
+                Ok(format!("Flag for machine {} is correct", machine_id))
+            } else {
+                Err(format!("Wrong flag for machine {}", machine_id))
             }
         }
         Err(e) => {
