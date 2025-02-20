@@ -1,4 +1,4 @@
-use crate::app::AppResult;
+use crate::app::{AppResult, Machine};
 
 use std::time::Duration;
 use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent};
@@ -11,13 +11,18 @@ pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
     Resize(u16, u16),
-    //UpdateInfoMessage(String),
-    //RefreshMachineList
+    FetchMachines,
+    FetchMachinesResult(Result<Vec<Machine>, String>),
+    SpawnMachine(u64),
+    SpawnMachineResult(Result<String, String>),
+    UpdateList,
+    SubmitFlag(String),
+    UpdateInfoMessage(String),
 }
 
 #[derive(Debug)]
 pub struct EventHandler {
-    sender: mpsc::UnboundedSender<Event>,
+    pub sender: mpsc::UnboundedSender<Event>,
     receiver: mpsc::UnboundedReceiver<Event>,
     handler: tokio::task::JoinHandle<()>,
 }

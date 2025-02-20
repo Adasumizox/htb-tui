@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use reqwest::Client;
 use ratatui::widgets::ListState;
+use tokio::sync::mpsc::UnboundedSender;
+use crate::event::Event;
 
 pub type AppResult<T> = std::result::Result<T, Box<dyn error::Error>>;
 
@@ -93,33 +95,28 @@ pub struct App {
     pub show_input_field: bool, // control input visibility
     pub selected_machine_ip: Option<String>, // IP of active machine
     pub selected_machine_id: Option<u64>,
+    pub event_sender: UnboundedSender<Event>,
 }
-impl Default for App {
-    fn default() -> Self {
+
+impl App {
+    // Create new application and accept Hackthebox application key
+    pub fn new(htb_api_key: String, event_sender: UnboundedSender<Event>) ->Self {
         Self {
             running: true,
+            htb_api_key,
+            client: reqwest::Client::new(),
+            machines: Vec::new(),
             state: ListState::default(),
             info_message: String::new(),
-            filter_criteria: FilterCriteria::None, // Show all machines by default
-            sort_criteria: SortCriteria::Difficulty, // Sort by difficulty by default
+            filter_criteria: FilterCriteria::None,
+            sort_criteria: SortCriteria::Difficulty,
             input_mode: InputMode::Normal,
             flag_input: String::new(),
             show_input_field: false,
             selected_machine_ip: None,
             selected_machine_id: None,
-            client: reqwest::Client::new(),
-            machines: Vec::new(),
-            htb_api_key: String::new(),
+            event_sender,
         }
-    }
-}
-
-impl App {
-    // Create new application and accept Hackthebox application key
-    pub fn new(htb_api_key: String) ->Self {
-        let mut app = Self::default();
-        app.htb_api_key = htb_api_key;
-        app
     }
 
     pub fn quit(&mut self) {
@@ -160,48 +157,46 @@ impl App {
         self.update_input_fields();
     }
 
-    pub async fn spawn_machine(&mut self) -> AppResult<()> {
-        let filtered = self.filtered_machines();
-        let sorted = self.sorted_machines(filtered);
-        if let Some(selected) = self.state.selected() {
-            if selected < sorted.len() { // Check index
-                let machine = &sorted[selected]; // Use filtered list
-                if machine.is_active() {
-                    self.info_message = format!("Machine {} is already active.", machine.name);
-                    return Ok(());
-                }
-            
-                let url = format!("{}/vm/spawn/?machine_id={}", HTB_API_URL, machine.id.to_string());
-                let res = self.client
-                    .post(url)
-                    .header("Authorization", format!("Bearer {}", self.htb_api_key))
-                    .send()
-                    .await?;
+    pub fn request_fetch_machines(&self) {
+        self.event_sender
+            .send(Event::FetchMachines)
+            .expect("Failed to send FetchMachines event");
+    }
 
-                if res.status().is_success() {
-                    self.info_message = format!("Spawned machine: {}", machine.name);
-                    // Refresh the machine list after spawning
-                    // Maybe replace that with update to only one machine (?)
-                    self.machines = fetch_all_machines(&self.client, &self.htb_api_key).await?;
-                    // After refresh re-apply filter
-                    let filtered = self.filtered_machines();
-                    let sorted = self.sorted_machines(filtered);
-                    if selected < sorted.len() {
-                        self.state.select(Some(selected));
-                    } else if !sorted.is_empty() {
-                        // Index out of bounds, select last item
-                        self.state.select(Some(sorted.len() - 1));
-                    } else {
-                        // List empty
-                        self.state.select(None);
-                    }
-                } else {
-                    self.info_message = format!("Failed to spawn {}: {}", machine.name, res.status())
-                }
+    pub fn handle_fetch_machines_result(&mut self, result: Result<Vec<Machine>, String>) {
+        match result {
+            Ok(machines) => {
+                self.machines = machines;
+                self.update_input_fields();
             }
-            self.update_input_fields();
+            Err(e) => {
+                self.info_message = format!("Error fetching machines: {}", e);
+            }
         }
-        Ok(())
+    }
+
+    pub fn request_spawn_machine(&self) {
+        if let Some(selected) = self.state.selected() {
+            let filtered_machines = self.filtered_machines();
+            let sorted_machines = self.sorted_machines(filtered_machines);
+            if let Some(machine) = sorted_machines.get(selected) {
+                let machine_id = machine.id;
+                self.event_sender
+                    .send(Event::SpawnMachine(machine_id))
+                    .expect("Failed to send SpawnMachine event");
+            }
+        }
+    }
+
+    pub fn handle_spawn_machine_result(&mut self, result: Result<String, String>) {
+        match result {
+            Ok(message) => {
+                self.info_message = message;
+            }
+            Err(e) => {
+                self.info_message = format!("Error spawning machine: {}", e);
+            }
+        }
     }
 
     pub fn filtered_machines(&self) -> Vec<Machine> {
@@ -276,6 +271,10 @@ impl App {
             self.input_mode = InputMode::Flag;
         }
     }
+
+    pub fn set_info_message(&mut self, message: String) {
+        self.info_message = message;
+    }
 }
 
 pub async fn fetch_all_machines(client: &Client, htb_api_key: &str) -> AppResult<Vec<Machine>> {
@@ -309,8 +308,6 @@ pub async fn fetch_machines(client: &Client, htb_api_key: &str, url: &str) -> Ap
         .await?;
     
     // Populate with IP because by default paginated does not have information about IP
-    // Maybe i should do it in spawn function but then if machine is active before
-    // We would not see it in active pane
     let mut res_with_ip = res;
     for machine in &mut res_with_ip.data {
         if machine.is_active() {
@@ -336,3 +333,24 @@ pub async fn fetch_machines(client: &Client, htb_api_key: &str, url: &str) -> Ap
     Ok(res_with_ip)
 }
 
+
+pub async fn spawn_machine(client: &Client, htb_api_key: &str, machine_id: u64) -> Result<String, String> {
+    let url = format!("{}/vm/spawn/?machine_id={}", HTB_API_URL, machine_id);
+    let res = client
+        .post(url)
+        .header("Authorization", format!("Bearer {}", htb_api_key))
+        .send()
+        .await;
+    match res {
+        Ok(response) => {
+            if response.status().is_success() {
+                Ok(format!("Machine {} spawned successfully", machine_id))
+            } else {
+                Err(format!("Failed to spawn with status: {}", response.status()))
+            }
+        }
+        Err(e) => {
+            Err(format!("Network request failed: {}", e))
+        }
+    }
+}

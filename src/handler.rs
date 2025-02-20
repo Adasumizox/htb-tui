@@ -1,4 +1,5 @@
 use crate::app::{App, AppResult, InputMode};
+use crate::event::{Event};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_key_events(key_event: KeyEvent, app: &mut App) ->AppResult<()> {
@@ -11,11 +12,25 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) ->AppResult<()> {
             KeyCode::Up => app.previous(),
             KeyCode::Char('a') => app.enter_flag_input_mode(),
             KeyCode::Enter => {
-                todo!();
+                app.request_spawn_machine();
             }
             _ => {}
         },
-        InputMode::Flag => todo!(),
+        InputMode::Flag => match key_event.code {
+            KeyCode::Esc => {
+                app.input_mode = InputMode::Normal;
+            }
+            KeyCode::Enter => {
+                app.event_sender.send(Event::SubmitFlag(app.flag_input.clone())).unwrap();
+            }
+            KeyCode::Char(c) => {
+                app.flag_input.push(c);
+            }
+            KeyCode::Backspace => {
+                app.flag_input.pop();
+            }
+            _ => {}
+        },
     }
     Ok(())
 }
