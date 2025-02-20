@@ -94,17 +94,10 @@ pub struct App {
     pub selected_machine_ip: Option<String>, // IP of active machine
     pub selected_machine_id: Option<u64>,
 }
-
-impl App {
-    // Create new application and accept Hackthebox application key
-    pub fn new(htb_api_key: String) ->Self {
-        let client = reqwest::Client::new();
-        let machines = fetch_all_machines(&client, &htb_api_key).await?;
+impl Default for App {
+    fn default() -> Self {
         Self {
             running: true,
-            htb_api_key,
-            client,
-            machines,
             state: ListState::default(),
             info_message: String::new(),
             filter_criteria: FilterCriteria::None, // Show all machines by default
@@ -114,7 +107,19 @@ impl App {
             show_input_field: false,
             selected_machine_ip: None,
             selected_machine_id: None,
+            client: reqwest::Client::new(),
+            machines: Vec::new(),
+            htb_api_key: String::new(),
         }
+    }
+}
+
+impl App {
+    // Create new application and accept Hackthebox application key
+    pub fn new(htb_api_key: String) ->Self {
+        let mut app = Self::default();
+        app.htb_api_key = htb_api_key;
+        app
     }
 
     pub fn quit(&mut self) {

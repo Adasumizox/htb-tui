@@ -11,8 +11,8 @@ pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
     Resize(u16, u16),
-    UpdateInfoMessage(String),
-    RefreshMachineList
+    //UpdateInfoMessage(String),
+    //RefreshMachineList
 }
 
 #[derive(Debug)]

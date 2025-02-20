@@ -16,7 +16,7 @@ pub mod ui;
 
 
 #[tokio::main]
-async fn main() ->Result<(), Box<dyn std::error::Error>> { 
+async fn main() ->AppResult<()> { 
     let htb_api_key = env::var("HTB_API_KEY")?;
     let mut app = App::new(htb_api_key);
 
