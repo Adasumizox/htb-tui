@@ -118,7 +118,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
                         crate::app::InputMode::Flag => Style::default().fg(Color::Yellow),
                         _ => Style::default().fg(Color::White),
                     })
-                    .block(Block::default().borders(Borders::ALL).title("User Flag"));
+                    .block(Block::default().borders(Borders::ALL).title("Flag"));
 
                 frame.render_widget(Clear, input_chunks[0]);
                 frame.render_widget(flag_block, input_chunks[0]);
