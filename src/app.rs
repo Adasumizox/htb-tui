@@ -175,12 +175,17 @@ impl App {
         }
     }
 
-    pub fn request_spawn_machine(&self) {
+    pub fn request_spawn_machine(&mut self) {
         if let Some(selected) = self.state.selected() {
             let filtered_machines = self.filtered_machines();
             let sorted_machines = self.sorted_machines(filtered_machines);
             if let Some(machine) = sorted_machines.get(selected) {
                 let machine_id = machine.id;
+                // Maybe not here but we need set this up somewhere, otherwise flag submission will
+                // not work
+                // Will not work here because machine might already be active, need to think about
+                // other solution
+                self.selected_machine_id = Some(machine_id);
                 self.event_sender
                     .send(Event::SpawnMachine(machine_id))
                     .expect("Failed to send SpawnMachine event");
@@ -203,7 +208,7 @@ impl App {
         if let (Some(machine_id), flag) = (self.selected_machine_id, self.flag_input.clone()) {
             self.event_sender
                 .send(Event::SubmitFlag(machine_id, flag))
-                .unwrap();
+                .expect("Failed to send SubmitFlag event");
         }
     }
 
@@ -273,7 +278,7 @@ impl App {
             if selected < sorted.len() {
                 let machine = &sorted[selected];
                 self.show_input_field = machine.is_active()
-                    && (!machine.auth_user_in_user_owns || !machine.auth_user_in_root_owns);
+                    && (!machine.auth_user_in_user_owns && !machine.auth_user_in_root_owns);
                 self.selected_machine_ip = machine.ip.clone();
             } else {
                 self.show_input_field = false;
