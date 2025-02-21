@@ -278,7 +278,7 @@ impl App {
             if selected < sorted.len() {
                 let machine = &sorted[selected];
                 self.show_input_field = machine.is_active()
-                    && (!machine.auth_user_in_user_owns && !machine.auth_user_in_root_owns);
+                    && (!machine.auth_user_in_user_owns || !machine.auth_user_in_root_owns);
                 self.selected_machine_ip = machine.ip.clone();
             } else {
                 self.show_input_field = false;
