@@ -63,9 +63,6 @@ async fn main() ->AppResult<()> {
                 let sender = tui.events.sender.clone();
                 tokio::spawn(async move {
                     let result = spawn_machine(&client, &htb_api_key, machine_id).await;
-                    if result.is_ok() {
-                        sender.send(Event::UpdateList).unwrap();
-                    }
                     sender.send(Event::SpawnMachineResult(result)).unwrap();
                 });
             }

@@ -184,22 +184,36 @@ impl App {
             let sorted_machines = self.sorted_machines(filtered_machines);
             if let Some(machine) = sorted_machines.get(selected) {
                 let machine_id = machine.id;
-                // Maybe not here but we need set this up somewhere, otherwise flag submission will
-                // not work
-                // Will not work here because machine might already be active, need to think about
-                // other solution
-                self.selected_machine_id = Some(machine_id);
+                
+                // Deactivate currently active machine
+                if let Some(previous_active_id) = self.selected_machine_id {
+                    if let Some(previous_machine) = self.machines.iter_mut().find(|m| m.id == previous_active_id) {
+                        previous_machine.active = Value::Bool(false);
+                        previous_machine.ip = None;
+                    }
+                }
+
                 self.event_sender
                     .send(Event::SpawnMachine(machine_id))
                     .expect("Failed to send SpawnMachine event");
             }
         }
+        self.update_input_fields();
     }
 
-    pub fn handle_spawn_machine_result(&mut self, result: Result<String, String>) {
+    pub fn handle_spawn_machine_result(&mut self, result: Result<(u64, String), String>) {
         match result {
-            Ok(message) => {
-                self.info_message = message;
+            Ok((machine_id, ip)) => {
+                if let Some(machine) = self.machines.iter_mut().find(|m| m.id == machine_id) {
+                    machine.active = Value::Bool(true);
+                    machine.ip = Some(ip);
+                    self.info_message = format!("Machine {} spawned successfully", machine_id);
+                    self.selected_machine_ip = machine.ip.clone();
+                    self.selected_machine_id = Some(machine.id);
+                } else {
+                    self.info_message = format!("Machine {} spawned, but not found in machine list", machine_id);
+                }
+                self.update_input_fields();
             }
             Err(e) => {
                 self.info_message = format!("Error spawning machine: {}", e);
@@ -359,17 +373,39 @@ pub async fn fetch_machines(client: &Client, htb_api_key: &str, url: &str) -> Ap
 }
 
 
-pub async fn spawn_machine(client: &Client, htb_api_key: &str, machine_id: u64) -> Result<String, String> {
+pub async fn spawn_machine(client: &Client, htb_api_key: &str, machine_id: u64) -> Result<(u64, String), String> {
     let url = format!("{}/vm/spawn/?machine_id={}", HTB_API_URL, machine_id);
     let res = client
         .post(url)
         .header("Authorization", format!("Bearer {}", htb_api_key))
         .send()
         .await;
+
     match res {
         Ok(response) => {
             if response.status().is_success() {
-                Ok(format!("Machine {} spawned successfully", machine_id))
+                match client.get(format!("{}/machine/profile/{}", HTB_API_URL, machine_id))
+                    .header("Authorization", format!("Bearer {}", htb_api_key))
+                    .send()
+                    .await
+                {
+                    Ok(profile_response) => {
+                        if profile_response.status().is_success() {
+                            if let Ok(json) = profile_response.json::<Value>().await {
+                                if let Some(ip) = json.get("info").and_then(|info| info.get("ip")).and_then(Value::as_str) {
+                                    Ok((machine_id, ip.to_string()))
+                                } else {
+                                    Err("Failed to extract ip from machine profile".to_string())
+                                }
+                            } else {
+                                Err("Failed to parse machine profile JSON".to_string())
+                            }
+                        } else {
+                            Err(format!("Failed to get profile with status: {}", profile_response.status()))
+                        }
+                    },
+                Err(e) => Err(format!("Network request for machine profile failed: {}", e))
+                }
             } else {
                 Err(format!("Failed to spawn with status: {}", response.status()))
             }
