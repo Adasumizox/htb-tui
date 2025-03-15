@@ -14,7 +14,7 @@ pub enum Event {
     FetchMachines,
     FetchMachinesResult(Result<(Vec<Machine>, Result<(), String>), String>),
     SpawnMachine(u64),
-    SpawnMachineResult(Result<String, String>),
+    SpawnMachineResult(Result<(u64, String), String>),
     UpdateList,
     SubmitFlag(u64, String),
     SubmitFlagResult(Result<String, String>),
