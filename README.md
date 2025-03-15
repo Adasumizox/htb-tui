@@ -23,8 +23,7 @@ To get your application token you need to visit your profile, click on "Profile 
 *   **Active Machine Details and Flag Submission Pane:** When a machine is active and not owned, a pane appears displaying:
     *   Active machine's name
     *   Active machine's IP address
-    *   Input Fields for submitting the user flag
-    *   Input Fields for submitting the root flag
+    *   Input Fields for submitting the flag
 
 ## Prerequisites
 
@@ -85,10 +84,7 @@ To get your application token you need to visit your profile, click on "Profile 
 *   **Sorting:**
     *   **`s` key:** Cycle through the sort options (Difficulty, User Owns, Root Owns, Name).
 *   **Flag input mode:**
-    *   **`u` key:** Enter user flag input mode
-        *   **`Enter` key:** Submit flag
-        *   **`Esc` key:** Go back to interactive mode
-    *   **`r` key:** Enter root flag input mode
+    *   **`a` key:** Enter flag input mode
         *   **`Enter` key:** Submit flag
         *   **`Esc` key:** Go back to interactive mode
 *   **Spawning:**
