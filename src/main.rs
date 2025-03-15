@@ -42,9 +42,16 @@ async fn main() ->AppResult<()> {
                 let htb_api_key = app.htb_api_key.clone();
                 let sender = tui.events.sender.clone();
                 tokio::spawn(async move {
-                    let result = fetch_all_machines(&client, &htb_api_key).await
+                    let result = fetch_all_machines(&client, &htb_api_key, &sender).await
                         .map_err(|e| e.to_string());
-                    sender.send(Event::FetchMachinesResult(result)).unwrap();
+                    match result {
+                        Ok(()) => {
+                            sender.send(Event::FetchMachinesResult(Ok((Vec::new(), Ok(()))))).unwrap();
+                        }
+                        Err(e) => {
+                            sender.send(Event::FetchMachinesResult(Ok((Vec::new(), Err(e))))).unwrap();
+                        }
+                    }
                 });
             }
             Event::FetchMachinesResult(result) => {

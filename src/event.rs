@@ -12,7 +12,7 @@ pub enum Event {
     Mouse(MouseEvent),
     Resize(u16, u16),
     FetchMachines,
-    FetchMachinesResult(Result<Vec<Machine>, String>),
+    FetchMachinesResult(Result<(Vec<Machine>, Result<(), String>), String>),
     SpawnMachine(u64),
     SpawnMachineResult(Result<String, String>),
     UpdateList,
