@@ -39,7 +39,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             let line = Line::from(vec![
                 Span::raw(
                     format!(
-                        "{:15} ({:10}) [{:3}] U:{}, R:{}",
+                        "{:15} ({:10}) [{:3}] U:{}, R:{} ",
                         machine.name,
                         machine.os,
                         machine.difficulty,
@@ -79,14 +79,30 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         if let Some(selected) = app.state.selected() {
             if selected < sorted_machines.len() {
                 let machine = &sorted_machines[selected];
-                let area = frame.area();
+                let popup_area = Layout::default()
+                    .direction(ratatui::layout::Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(20),
+                        Constraint::Percentage(60),
+                        Constraint::Percentage(20),
+                    ])
+                    .split(frame.area())[1];
+                let popup_area = Layout::default()
+                    .direction(ratatui::layout::Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(20),
+                        Constraint::Percentage(60),
+                        Constraint::Percentage(20),
+                    ])
+                    .split(popup_area)[1];
+
+                frame.render_widget(Clear, popup_area);
+
                 let details_chunk =
-                    Layout::horizontal([Constraint::Length(42), Constraint::Min(0)]).split(Rect::new(
-                        area.width / 2 - 21,
-                        area.height / 2 - 5,
-                        80,
-                        10,
-                    ));
+                    Layout::horizontal([
+                        Constraint::Ratio(1,2), 
+                        Constraint::Ratio(1,2)])
+                        .split(popup_area);
 
                 let active_info = Paragraph::new(vec![
                     Line::from(vec![
@@ -107,7 +123,6 @@ pub fn render(app: &mut App, frame: &mut Frame) {
                 .style(Style::default().fg(Color::White))
                 .block(Block::default().borders(Borders::ALL).title("Active Machine Info"));
 
-                frame.render_widget(Clear, details_chunk[0]);
                 frame.render_widget(active_info, details_chunk[0]);
 
                 let input_chunks =
@@ -120,7 +135,6 @@ pub fn render(app: &mut App, frame: &mut Frame) {
                     })
                     .block(Block::default().borders(Borders::ALL).title("Flag"));
 
-                frame.render_widget(Clear, input_chunks[0]);
                 frame.render_widget(flag_block, input_chunks[0]);
 
                 match app.input_mode {
