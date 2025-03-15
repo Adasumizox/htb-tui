@@ -107,7 +107,7 @@ impl App {
             client: reqwest::Client::new(),
             machines: Vec::new(),
             state: ListState::default(),
-            info_message: String::new(),
+            info_message: String::new(),            
             filter_criteria: FilterCriteria::None,
             sort_criteria: SortCriteria::Difficulty,
             input_mode: InputMode::Normal,
@@ -163,11 +163,14 @@ impl App {
             .expect("Failed to send FetchMachines event");
     }
 
-    pub fn handle_fetch_machines_result(&mut self, result: Result<Vec<Machine>, String>) {
+    pub fn handle_fetch_machines_result(&mut self, result: Result<(Vec<Machine>, Result<(), String>), String>) {
         match result {
-            Ok(machines) => {
-                self.machines = machines;
+            Ok((machines, completion_result)) => {
+                self.machines.extend(machines);
                 self.update_input_fields();
+                if let Err(completion_error) = completion_result {
+                        self.info_message = format!("Error fetchin machines: {}", completion_error);
+                }
             }
             Err(e) => {
                 self.info_message = format!("Error fetching machines: {}", e);
@@ -175,12 +178,17 @@ impl App {
         }
     }
 
-    pub fn request_spawn_machine(&self) {
+    pub fn request_spawn_machine(&mut self) {
         if let Some(selected) = self.state.selected() {
             let filtered_machines = self.filtered_machines();
             let sorted_machines = self.sorted_machines(filtered_machines);
             if let Some(machine) = sorted_machines.get(selected) {
                 let machine_id = machine.id;
+                // Maybe not here but we need set this up somewhere, otherwise flag submission will
+                // not work
+                // Will not work here because machine might already be active, need to think about
+                // other solution
+                self.selected_machine_id = Some(machine_id);
                 self.event_sender
                     .send(Event::SpawnMachine(machine_id))
                     .expect("Failed to send SpawnMachine event");
@@ -203,7 +211,7 @@ impl App {
         if let (Some(machine_id), flag) = (self.selected_machine_id, self.flag_input.clone()) {
             self.event_sender
                 .send(Event::SubmitFlag(machine_id, flag))
-                .unwrap();
+                .expect("Failed to send SubmitFlag event");
         }
     }
 
@@ -273,7 +281,7 @@ impl App {
             if selected < sorted.len() {
                 let machine = &sorted[selected];
                 self.show_input_field = machine.is_active()
-                    && (!machine.auth_user_in_user_owns || !machine.auth_user_in_root_owns);
+                    && (!machine.auth_user_in_user_owns && !machine.auth_user_in_root_owns);
                 self.selected_machine_ip = machine.ip.clone();
             } else {
                 self.show_input_field = false;
@@ -296,25 +304,23 @@ impl App {
     }
 }
 
-pub async fn fetch_all_machines(client: &Client, htb_api_key: &str) -> AppResult<Vec<Machine>> {
-    let mut all_machines = Vec::new();
-
+pub async fn fetch_all_machines(client: &Client, htb_api_key: &str, sender: &UnboundedSender<Event>) -> AppResult<()> {
     // Fetch active machines
     let url = format!("{}/machine/paginated?per_page=100", HTB_API_URL);
     let res = fetch_machines(client, htb_api_key, &url).await?;
-    all_machines.extend(res.data);
+    sender.send(Event::FetchMachinesResult(Ok((res.data, Ok(()))))).unwrap();
 
     // Fetch retired machines
     let url = format!("{}/machine/list/retired/paginated?per_page=100", HTB_API_URL);
     let mut res = fetch_machines(client, htb_api_key, &url).await?;
-    all_machines.extend(res.data);
+    sender.send(Event::FetchMachinesResult(Ok((res.data, Ok(()))))).unwrap();    
 
     while let Some(next_url) = res.links.next {
         res = fetch_machines(client, htb_api_key, &next_url).await?;
-        all_machines.extend(res.data);
+        sender.send(Event::FetchMachinesResult(Ok((res.data, Ok(()))))).unwrap();
     }
 
-    Ok(all_machines)
+    Ok(())
 }
 
 pub async fn fetch_machines(client: &Client, htb_api_key: &str, url: &str) -> AppResult<Root> {

@@ -19,14 +19,14 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) ->AppResult<()> {
             KeyCode::Esc => {
                 app.input_mode = InputMode::Normal;
             }
-            KeyCode::Enter => {
-                app.request_submit_flag();
-            }
             KeyCode::Char(c) => {
                 app.flag_input.push(c);
             }
             KeyCode::Backspace => {
                 app.flag_input.pop();
+            }
+            KeyCode::Enter => {
+                 app.request_submit_flag();
             }
             _ => {}
         },
