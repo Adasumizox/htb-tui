@@ -107,9 +107,7 @@ The application displays the current filter and sort criteria in the title bar o
 ## Potential Enhancements
 
 *   **Configuration File:** Load settings (like API key, default filter, default sort) from a configuration file.
-*   **Targeted Updates:** Instead of refetching the entire machine list after spawning, update only the relevant machine's data. This would greatly improve performance.
 *   **Search Functionality:** Allow users to search for machines by name or other criteria.
-*   **Asynchronous Updates:** Use asynchronous tasks (tokio) more effectively to avoid blocking the UI while fetching data.
 
 ## Contributing
 
